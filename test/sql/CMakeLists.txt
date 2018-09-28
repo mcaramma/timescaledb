@@ -35,6 +35,7 @@ set(TEST_FILES
   lateral.sql
   partitioning.sql
   pg_dump.sql
+  pg_dump_unprivileged.sql
   plain.sql
   plan_expand_hypertable_optimized.sql
   plan_expand_hypertable_results_diff.sql
@@ -57,15 +58,29 @@ set(TEST_FILES
   vacuum.sql
   version.sql)
 
-IF(CMAKE_BUILD_TYPE MATCHES Debug)
+if (CMAKE_BUILD_TYPE MATCHES Debug)
   list(APPEND TEST_FILES
-    loader.sql symbol_conflict.sql)
-ENDIF(CMAKE_BUILD_TYPE MATCHES Debug)
+    bgw_launcher.sql
+    bgw_db_scheduler.sql
+    installation_metadata.sql
+    loader.sql
+    net.sql
+    symbol_conflict.sql
+    telemetry.sql)
+  if (USE_OPENSSL)
+    list(APPEND TEST_FILES
+      privacy.sql)
+  endif (USE_OPENSSL)
+endif (CMAKE_BUILD_TYPE MATCHES Debug)
 
-IF (${PG_VERSION_MAJOR} GREATER "9")
+if (${PG_VERSION_MAJOR} EQUAL "10")
   list(APPEND TEST_FILES
-    generated_as_identity.sql)
-ENDIF()
+    generated_as_identity.sql
+    rowsecurity-10.sql)
+else()
+  list(APPEND TEST_FILES
+    rowsecurity-9.6.sql)
+endif ()
 
 set(TEST_TEMPLATES
   parallel.sql.in
@@ -100,3 +115,5 @@ foreach(TEST_FILE ${TEST_FILES})
   string(REGEX REPLACE "(.+)\.sql" "\\1" TESTS_TO_RUN ${TEST_FILE})
   file(APPEND ${TEST_SCHEDULE} "test: ${TESTS_TO_RUN}\n")
 endforeach(TEST_FILE)
+
+add_subdirectory(loader)

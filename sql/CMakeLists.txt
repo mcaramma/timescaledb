@@ -1,18 +1,26 @@
+# Set version in the NOTICE file
+configure_file(notice.sql.in notice.sql)
+
 set(INSTALL_FILE ${PROJECT_NAME}--${PROJECT_VERSION_MOD}.sql)
 
 # Source files that define the schemas and tables for our metadata
-set(CATALOG_SOURCE_FILES
-  schemas.sql # Must be first
-  tables.sql
+set(PRE_INSTALL_SOURCE_FILES
+  pre_install/schemas.sql # Must be first
+  pre_install/tables.sql
 )
 
 # Things like aggregate functions cannot be REPLACEd and really
-# need to be created just once(like CATALOG_SOURCE_FILES)
-# but unlike CATALOG_SOURCE_FILES these have to be loaded
+# need to be created just once(like PRE_INSTALL_SOURCE_FILES)
+# but unlike PRE_INSTALL_SOURCE_FILES these have to be loaded
 # after everything else is loaded.
 set(IMMUTABLE_API_SOURCE_FILES
   aggregates.sql
 )
+
+set(NOTICE_FILE
+  ${CMAKE_CURRENT_BINARY_DIR}/notice.sql
+)
+
 # The rest of the source files defining mostly functions
 set(SOURCE_FILES
   hypertable.sql
@@ -31,12 +39,14 @@ set(SOURCE_FILES
   size_utils.sql
   histogram.sql
   cache.sql
+  bgw_scheduler.sql
+  installation_metadata.sql
 )
 
 # These files should be pre-pended to update scripts so that they are
 # executed before anything else during updates
 set(PRE_UPDATE_FILES
-  updates/pre-global.sql
+  updates/pre-update.sql
 )
 
 # These files represent the modifications that happen in each version,
@@ -64,10 +74,14 @@ set(MOD_FILES
   updates/0.9.2--0.10.0.sql
   updates/0.10.0--0.10.1.sql
   updates/0.10.1--0.11.0.sql
-  updates/0.11.0--0.11.1-dev.sql
+  updates/0.11.0--0.12.0.sql
+  updates/0.12.0--0.12.1.sql
+  updates/0.12.1--1.0.0-rc1.sql
+  updates/1.0.0-rc1--1.0.0-rc2.sql
 )
 
 set(MODULE_PATHNAME "$libdir/timescaledb-${PROJECT_VERSION_MOD}")
+set(LOADER_PATHNAME "$libdir/timescaledb")
 
 # Function to replace @MODULE_PATHNAME@ in source files, producing an
 # output file in the build dir
@@ -86,7 +100,7 @@ endfunction()
 # Create versioned files (replacing MODULE_PATHNAME) in the build
 # directory of all our source files
 version_files("${PRE_UPDATE_FILES}" PRE_UPDATE_FILES_VERSIONED)
-version_files("${CATALOG_SOURCE_FILES}" CATALOG_SOURCE_FILES_VERSIONED)
+version_files("${PRE_INSTALL_SOURCE_FILES}" PRE_INSTALL_SOURCE_FILES_VERSIONED)
 version_files("${IMMUTABLE_API_SOURCE_FILES}" IMMUTABLE_API_SOURCE_FILES_VERSIONED)
 version_files("${SOURCE_FILES}" SOURCE_FILES_VERSIONED)
 version_files("${MOD_FILES}" MOD_FILES_VERSIONED)
@@ -96,12 +110,9 @@ function(cat_files SRC_FILE_LIST OUTPUT_FILE)
   if (WIN32)
     # Make list of files into string of files separated by "+"
     # to make Windows copy concatenate them
-
     file(TO_NATIVE_PATH "${SRC_FILE_LIST}" SRC_FILE_LIST_NATIVE)
-    string(REPLACE ";" ";+" SQL_LIST_JOINED "${SRC_FILE_LIST_NATIVE}")
-
+    string(REPLACE ";" ";+;" SQL_LIST_JOINED "${SRC_FILE_LIST_NATIVE}")
     file(TO_NATIVE_PATH "${OUTPUT_FILE}" OUTPUT_FILE_NATIVE)
-
     set(CAT_CMD copy /B /y ${SQL_LIST_JOINED} "\"${OUTPUT_FILE_NATIVE}\"" >NUL)
   else ()
     set(CAT_CMD cat ${SRC_FILE_LIST} > ${OUTPUT_FILE})
@@ -117,13 +128,13 @@ endfunction()
 
 # Generate the extension file used with CREATE EXTENSION
 cat_files(
-  "${CATALOG_SOURCE_FILES_VERSIONED};${SOURCE_FILES_VERSIONED};${IMMUTABLE_API_SOURCE_FILES_VERSIONED}"
+  "${PRE_INSTALL_SOURCE_FILES_VERSIONED};${SOURCE_FILES_VERSIONED};${IMMUTABLE_API_SOURCE_FILES_VERSIONED};${NOTICE_FILE}"
   ${CMAKE_CURRENT_BINARY_DIR}/${INSTALL_FILE}
 )
 add_custom_target(sqlfile ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${INSTALL_FILE})
 
 # Generate the update files used with ALTER EXTENSION <name> UPDATE
-set(MOD_FILE_REGEX "([0-9]+\\.[0-9]+\\.*[0-9]*)--([0-9]+\\.[0-9]+\\.*[0-9]*[-dev]*).sql")
+set(MOD_FILE_REGEX "([0-9]+\\.[0-9]+\\.*[0-9]+[-a-z0-9]*)--([0-9]+\\.[0-9]+\\.*[0-9]+[-a-z0-9]*).sql")
 
 # We'd like to process the updates in reverse (descending) order
 set(MOD_FILES_LIST ${MOD_FILES_VERSIONED})

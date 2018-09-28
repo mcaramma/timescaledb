@@ -26,6 +26,7 @@
 #include <utils/guc.h>
 #include <utils/snapmgr.h>
 #include <parser/parse_utilcmd.h>
+#include <commands/tablespace.h>
 
 #include <miscadmin.h>
 
@@ -137,6 +138,8 @@ check_chunk_alter_table_operation_allowed(Oid relid, AlterTableStmt *stmt)
 				case AT_SetStorage:
 				case AT_DropCluster:
 				case AT_ClusterOn:
+				case AT_EnableRowSecurity:
+				case AT_DisableRowSecurity:
 					/* allowed on chunks */
 					break;
 				default:
@@ -825,8 +828,6 @@ process_rename(Node *parsetree)
 	if (!OidIsValid(relid))
 		return;
 
-	/* TODO: forbid all rename op on chunk table */
-
 	hcache = hypertable_cache_pin();
 
 	switch (stmt->renameType)
@@ -910,7 +911,7 @@ process_altertable_drop_not_null(Hypertable *ht, AlterTableCmd *cmd)
 		if (IS_OPEN_DIMENSION(dim) &&
 			strncmp(NameStr(dim->fd.column_name), cmd->name, NAMEDATALEN) == 0)
 			ereport(ERROR,
-					(errcode(ERRCODE_IO_OPERATION_NOT_SUPPORTED),
+					(errcode(ERRCODE_TS_OPERATION_NOT_SUPPORTED),
 					 errmsg("cannot drop not-null constraint from a time-partitioned column")));
 	}
 }
@@ -1377,7 +1378,7 @@ process_alter_column_type_start(Hypertable *ht, AlterTableCmd *cmd)
 		if (IS_CLOSED_DIMENSION(dim) &&
 			strncmp(NameStr(dim->fd.column_name), cmd->name, NAMEDATALEN) == 0)
 			ereport(ERROR,
-					(errcode(ERRCODE_IO_OPERATION_NOT_SUPPORTED),
+					(errcode(ERRCODE_TS_OPERATION_NOT_SUPPORTED),
 					 errmsg("cannot change the type of a hash-partitioned column")));
 	}
 }
@@ -1424,6 +1425,36 @@ process_altertable_chunk(Hypertable *ht, Oid chunk_relid, void *arg)
 	AlterTableCmd *cmd = arg;
 
 	AlterTableInternal(chunk_relid, list_make1(cmd), false);
+}
+
+static void
+process_altertable_set_tablespace_end(Hypertable *ht, AlterTableCmd *cmd)
+{
+	Oid			tspc_oid = get_rel_tablespace(ht->main_table_relid);
+	NameData	tspc_name;
+	Tablespaces *tspcs;
+
+	Assert(OidIsValid(tspc_oid));
+	namestrcpy(&tspc_name, cmd->name);
+
+	tspcs = tablespace_scan(ht->fd.id);
+
+	if (tspcs->num_tablespaces > 1)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("cannot set new tablespace when multiple tablespaces are attached to hypertable \"%s\"",
+						get_rel_name(ht->main_table_relid)),
+				 errhint("Detach tablespaces before altering the hypertable.")));
+
+
+	if (tspcs->num_tablespaces == 1)
+	{
+		Assert(hypertable_has_tablespace(ht, tspcs->tablespaces[0].tablespace_oid));
+		tablespace_delete(ht->fd.id, NameStr(tspcs->tablespaces[0].fd.tablespace_name));
+	}
+
+	tablespace_attach_internal(&tspc_name, ht->main_table_relid, true);
+	foreach_chunk(ht, process_altertable_chunk, cmd);
 }
 
 static void
@@ -1688,6 +1719,9 @@ process_altertable_end_subcmd(Hypertable *ht, Node *parsetree, ObjectAddress *ob
 		case AT_DropCluster:
 			foreach_chunk(ht, process_altertable_chunk, cmd);
 			break;
+		case AT_SetTableSpace:
+			process_altertable_set_tablespace_end(ht, cmd);
+			break;
 		case AT_AddInherit:
 		case AT_DropInherit:
 			ereport(ERROR,
@@ -1695,9 +1729,65 @@ process_altertable_end_subcmd(Hypertable *ht, Node *parsetree, ObjectAddress *ob
 					 errmsg("hypertables do not support inheritance")));
 		case AT_SetStatistics:
 		case AT_SetLogged:
-			/* handled by default recursion */
+		case AT_SetStorage:
+		case AT_ColumnDefault:
+		case AT_SetNotNull:
+		case AT_DropNotNull:
+		case AT_AddOf:
+		case AT_DropOf:
+#if PG10
+		case AT_AddIdentity:
+		case AT_SetIdentity:
+		case AT_DropIdentity:
+#endif
+			/* all of the above are handled by default recursion */
 			break;
-		default:
+		case AT_EnableRowSecurity:
+		case AT_DisableRowSecurity:
+		case AT_ForceRowSecurity:
+		case AT_NoForceRowSecurity:
+			/* RLS commands should not recurse to chunks */
+			break;
+		case AT_ReAddConstraint:
+		case AT_ReAddIndex:
+		case AT_AddOidsRecurse:
+
+			/*
+			 * all of the above are internal commands that are hit in tests
+			 * and correctly handled
+			 */
+			break;
+		case AT_AddColumn:
+		case AT_AddColumnRecurse:
+		case AT_DropColumn:
+		case AT_DropColumnRecurse:
+
+			/*
+			 * adding and dropping columns handled in
+			 * process_altertable_start_table
+			 */
+			break;
+		case AT_DropConstraint:
+		case AT_DropConstraintRecurse:
+			/* drop constraints handled by process_ddl_sql_drop */
+			break;
+		case AT_ProcessedConstraint:	/* internal command never hit in our
+										 * test code, so don't know how to
+										 * handle */
+		case AT_ReAddComment:	/* internal command never hit in our test
+								 * code, so don't know how to handle */
+		case AT_AddColumnToView:	/* only used with views */
+		case AT_AlterColumnGenericOptions:	/* only used with foreign tables */
+		case AT_GenericOptions: /* only used with foreign tables */
+#if PG10
+		case AT_AttachPartition:	/* handled in
+									 * process_altertable_start_table but also
+									 * here as failsafe */
+		case AT_DetachPartition:
+#endif
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("operation not supported on hypertables %d", cmd->subtype)));
 			break;
 	}
 }
@@ -1740,8 +1830,6 @@ process_altertable_end_table(Node *parsetree, CollectedCommand *cmd)
 		return;
 
 	hcache = hypertable_cache_pin();
-
-	/* TODO: forbid all alter_table on chunk table */
 
 	ht = hypertable_cache_get_entry(hcache, relid);
 
@@ -2164,13 +2252,13 @@ process_ddl_event_command_end(EventTriggerData *trigdata)
 	EventTriggerUndoInhibitCommandCollection();
 }
 
-TS_FUNCTION_INFO_V1(timescaledb_process_ddl_event);
+TS_FUNCTION_INFO_V1(ts_timescaledb_process_ddl_event);
 /*
  * Event trigger hook for DDL commands that have alread been handled by
  * PostgreSQL (i.e., "ddl_command_end" and "sql_drop" events).
  */
 Datum
-timescaledb_process_ddl_event(PG_FUNCTION_ARGS)
+ts_timescaledb_process_ddl_event(PG_FUNCTION_ARGS)
 {
 	EventTriggerData *trigdata = (EventTriggerData *) fcinfo->context;
 	ListCell   *lc;

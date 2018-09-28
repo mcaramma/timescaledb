@@ -1,6 +1,8 @@
 #ifndef TIMESCALEDB_COMPAT_H
 #define TIMESCALEDB_COMPAT_H
 
+#include <postgres.h>
+
 #include "export.h"
 
 #define is_supported_pg_version_96(version) ((version >= 90603) && (version < 100000))
@@ -30,6 +32,8 @@
 	map_variable_attnos(returning_clauses, varno, sublevels_up, map, map_size, rowtype, found_whole_row);
 #define ExecBuildProjectionInfoCompat(tl, exprContext, slot, parent, inputdesc) \
 	 ExecBuildProjectionInfo(tl, exprContext, slot, parent, inputdesc)
+#define WaitLatchCompat(latch, wakeEvents, timeout) \
+	WaitLatch(latch, wakeEvents, timeout, PG_WAIT_EXTENSION)
 
 #elif PG96
 
@@ -51,7 +55,8 @@
 	map_variable_attnos(expr, varno, sublevels_up, map, map_size, found_whole_row)
 #define ExecBuildProjectionInfoCompat(tl, exprContext, slot, parent, inputdesc) \
 	 ExecBuildProjectionInfo((List *)ExecInitExpr((Expr *) tl, NULL), exprContext, slot, inputdesc)
-
+#define WaitLatchCompat(latch, wakeEvents, timeout) \
+	WaitLatch(latch, wakeEvents, timeout)
 #else
 
 #error "Unsupported PostgreSQL version"

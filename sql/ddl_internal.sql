@@ -43,7 +43,7 @@ BEGIN
 
         IF exist_count = 0 THEN
             RAISE 'hypertable "%" does not exist', drop_chunks_impl.table_name
-            USING ERRCODE = 'IO001';
+            USING ERRCODE = 'TS001';
         END IF;
     END IF;
 
@@ -114,7 +114,7 @@ $BODY$;
 
 --documentation of these function located in chunk_index.h
 CREATE OR REPLACE FUNCTION _timescaledb_internal.chunk_index_clone(chunk_index_oid OID) RETURNS OID
-AS '@MODULE_PATHNAME@', 'chunk_index_clone' LANGUAGE C VOLATILE STRICT;
+AS '@MODULE_PATHNAME@', 'ts_chunk_index_clone' LANGUAGE C VOLATILE STRICT;
 
 CREATE OR REPLACE FUNCTION _timescaledb_internal.chunk_index_replace(chunk_index_oid_old OID, chunk_index_oid_new OID) RETURNS VOID
-AS '@MODULE_PATHNAME@', 'chunk_index_replace' LANGUAGE C VOLATILE STRICT;
+AS '@MODULE_PATHNAME@', 'ts_chunk_index_replace' LANGUAGE C VOLATILE STRICT;

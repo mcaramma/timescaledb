@@ -454,10 +454,10 @@ tablespace_delete_from_all(const char *tspcname, Oid userid)
 	return num_deleted;
 }
 
-TS_FUNCTION_INFO_V1(tablespace_attach);
+TS_FUNCTION_INFO_V1(ts_tablespace_attach);
 
 Datum
-tablespace_attach(PG_FUNCTION_ARGS)
+ts_tablespace_attach(PG_FUNCTION_ARGS)
 {
 	Name		tspcname = PG_ARGISNULL(0) ? NULL : PG_GETARG_NAME(0);
 	Oid			hypertable_oid = PG_ARGISNULL(1) ? InvalidOid : PG_GETARG_OID(1);
@@ -516,7 +516,7 @@ tablespace_attach_internal(Name tspcname, Oid hypertable_oid, bool if_not_attach
 
 	if (NULL == ht)
 		ereport(ERROR,
-				(errcode(ERRCODE_IO_HYPERTABLE_NOT_EXIST),
+				(errcode(ERRCODE_TS_HYPERTABLE_NOT_EXIST),
 				 errmsg("table \"%s\" is not a hypertable",
 						get_rel_name(hypertable_oid))));
 
@@ -524,12 +524,12 @@ tablespace_attach_internal(Name tspcname, Oid hypertable_oid, bool if_not_attach
 	{
 		if (if_not_attached)
 			ereport(NOTICE,
-					(errcode(ERRCODE_IO_TABLESPACE_ALREADY_ATTACHED),
+					(errcode(ERRCODE_TS_TABLESPACE_ALREADY_ATTACHED),
 					 errmsg("tablespace \"%s\" is already attached to hypertable \"%s\", skipping",
 							NameStr(*tspcname), get_rel_name(hypertable_oid))));
 		else
 			ereport(ERROR,
-					(errcode(ERRCODE_IO_TABLESPACE_ALREADY_ATTACHED),
+					(errcode(ERRCODE_TS_TABLESPACE_ALREADY_ATTACHED),
 					 errmsg("tablespace \"%s\" is already attached to hypertable \"%s\"",
 							NameStr(*tspcname), get_rel_name(hypertable_oid))));
 	}
@@ -557,7 +557,7 @@ tablespace_detach_one(Oid hypertable_oid, const char *tspcname, Oid tspcoid, boo
 
 	if (NULL == ht)
 		ereport(ERROR,
-				(errcode(ERRCODE_IO_HYPERTABLE_NOT_EXIST),
+				(errcode(ERRCODE_TS_HYPERTABLE_NOT_EXIST),
 				 errmsg("table \"%s\" is not a hypertable",
 						get_rel_name(hypertable_oid))));
 
@@ -565,12 +565,12 @@ tablespace_detach_one(Oid hypertable_oid, const char *tspcname, Oid tspcoid, boo
 		ret = tablespace_delete(ht->fd.id, tspcname);
 	else if (if_attached)
 		ereport(NOTICE,
-				(errcode(ERRCODE_IO_TABLESPACE_NOT_ATTACHED),
+				(errcode(ERRCODE_TS_TABLESPACE_NOT_ATTACHED),
 				 errmsg("tablespace \"%s\" is not attached to hypertable \"%s\", skipping",
 						tspcname, get_rel_name(hypertable_oid))));
 	else
 		ereport(ERROR,
-				(errcode(ERRCODE_IO_TABLESPACE_NOT_ATTACHED),
+				(errcode(ERRCODE_TS_TABLESPACE_NOT_ATTACHED),
 				 errmsg("tablespace \"%s\" is not attached to hypertable \"%s\"",
 						tspcname, get_rel_name(hypertable_oid))));
 
@@ -593,7 +593,7 @@ tablespace_detach_all(Oid hypertable_oid)
 
 	if (NULL == ht)
 		ereport(ERROR,
-				(errcode(ERRCODE_IO_HYPERTABLE_NOT_EXIST),
+				(errcode(ERRCODE_TS_HYPERTABLE_NOT_EXIST),
 				 errmsg("table \"%s\" is not a hypertable",
 						get_rel_name(hypertable_oid))));
 
@@ -604,10 +604,10 @@ tablespace_detach_all(Oid hypertable_oid)
 	return ret;
 }
 
-TS_FUNCTION_INFO_V1(tablespace_detach);
+TS_FUNCTION_INFO_V1(ts_tablespace_detach);
 
 Datum
-tablespace_detach(PG_FUNCTION_ARGS)
+ts_tablespace_detach(PG_FUNCTION_ARGS)
 {
 	Name		tspcname = PG_ARGISNULL(0) ? NULL : PG_GETARG_NAME(0);
 	Oid			hypertable_oid = PG_ARGISNULL(1) ? InvalidOid : PG_GETARG_OID(1);
@@ -644,10 +644,10 @@ tablespace_detach(PG_FUNCTION_ARGS)
 	PG_RETURN_INT32(ret);
 }
 
-TS_FUNCTION_INFO_V1(tablespace_detach_all_from_hypertable);
+TS_FUNCTION_INFO_V1(ts_tablespace_detach_all_from_hypertable);
 
 Datum
-tablespace_detach_all_from_hypertable(PG_FUNCTION_ARGS)
+ts_tablespace_detach_all_from_hypertable(PG_FUNCTION_ARGS)
 {
 	if (PG_NARGS() != 1)
 		elog(ERROR, "invalid number of arguments");
@@ -658,10 +658,10 @@ tablespace_detach_all_from_hypertable(PG_FUNCTION_ARGS)
 	PG_RETURN_INT32(tablespace_detach_all(PG_GETARG_OID(0)));
 }
 
-TS_FUNCTION_INFO_V1(tablespace_show);
+TS_FUNCTION_INFO_V1(ts_tablespace_show);
 
 Datum
-tablespace_show(PG_FUNCTION_ARGS)
+ts_tablespace_show(PG_FUNCTION_ARGS)
 {
 	FuncCallContext *funcctx;
 	Oid			hypertable_oid = PG_ARGISNULL(0) ? InvalidOid : PG_GETARG_OID(0);
@@ -688,7 +688,7 @@ tablespace_show(PG_FUNCTION_ARGS)
 
 	if (NULL == ht)
 		ereport(ERROR,
-				(errcode(ERRCODE_IO_HYPERTABLE_NOT_EXIST),
+				(errcode(ERRCODE_TS_HYPERTABLE_NOT_EXIST),
 				 errmsg("table \"%s\" is not a hypertable",
 						get_rel_name(hypertable_oid))));
 

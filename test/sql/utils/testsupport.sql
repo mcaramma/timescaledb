@@ -69,7 +69,7 @@ $BODY$
     (SELECT t.spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace)
     FROM pg_class c, pg_index i
     WHERE c.oid = i.indexrelid AND i.indrelid = rel
-    ORDER BY c.oid;
+    ORDER BY c.relname;
 $BODY$;
 
 CREATE OR REPLACE FUNCTION test.show_indexesp(pattern text)
@@ -121,7 +121,7 @@ $BODY$
     c.contype,
     array(SELECT attname FROM pg_attribute a, unnest(conkey) k WHERE a.attrelid = rel AND k = a.attnum),
     c.conindid::regclass,
-    c.consrc,
+    pg_get_expr(c.conbin, c.conrelid),
     c.condeferrable,
     c.condeferred,
     c.convalidated
@@ -156,7 +156,7 @@ BEGIN
     c.contype,
     array(SELECT attname FROM pg_attribute a, unnest(conkey) k WHERE a.attrelid = cl.oid AND k = a.attnum),
     c.conindid::regclass,
-    c.consrc,
+    pg_get_expr(c.conbin, c.conrelid),
     c.condeferrable,
     c.condeferred,
     c.convalidated
@@ -257,4 +257,4 @@ $BODY$;
 
 -- Used to set a deterministic memory setting during tests
 CREATE OR REPLACE FUNCTION test.set_memory_cache_size(memory_amount text)
-RETURNS BIGINT AS :MODULE_PATHNAME, 'set_memory_cache_size' LANGUAGE C VOLATILE STRICT;
+RETURNS BIGINT AS :MODULE_PATHNAME, 'ts_set_memory_cache_size' LANGUAGE C VOLATILE STRICT;

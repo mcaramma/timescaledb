@@ -21,11 +21,10 @@
 #include "catalog.h"
 #include "extension.h"
 #include "guc.h"
-#include "version.h"
+#include "config.h"
 #include "extension_utils.c"
 #include "compat.h"
 
-#define EXTENSION_PROXY_TABLE "cache_inval_extension"
 
 static Oid	extension_proxy_oid = InvalidOid;
 
@@ -247,4 +246,11 @@ extension_is_loaded(void)
 			elog(ERROR, "unknown state: %d", extstate);
 			return false;
 	}
+}
+
+char *
+extension_get_so_name()
+{
+	/* TODO: after merge check whether this is the right place */
+	return EXTENSION_NAME "-" TIMESCALEDB_VERSION_MOD;
 }

@@ -6,15 +6,16 @@
 #include <utils/guc.h>
 
 #include "extension.h"
+#include "bgw/launcher_interface.h"
 #include "guc.h"
 #include "catalog.h"
 #include "version.h"
 #include "compat.h"
+#include "config.h"
 
 #ifdef PG_MODULE_MAGIC
 PG_MODULE_MAGIC;
 #endif
-
 
 extern void _chunk_dispatch_info_init(void);
 extern void _chunk_dispatch_info_fini(void);
@@ -37,6 +38,19 @@ extern void _process_utility_fini(void);
 extern void _event_trigger_init(void);
 extern void _event_trigger_fini(void);
 
+extern void _conn_plain_init();
+extern void _conn_plain_fini();
+
+#ifdef TS_USE_OPENSSL
+extern void _conn_ssl_init();
+extern void _conn_ssl_fini();
+#endif
+
+#ifdef TS_DEBUG
+extern void _conn_mock_init();
+extern void _conn_mock_fini();
+#endif
+
 extern void PGDLLEXPORT _PG_init(void);
 extern void PGDLLEXPORT _PG_fini(void);
 
@@ -49,6 +63,7 @@ _PG_init(void)
 	 */
 	extension_check_version(TIMESCALEDB_VERSION_MOD);
 	extension_check_server_version();
+	bgw_check_loader_api_version();
 
 	_chunk_dispatch_info_init();
 	_cache_init();
@@ -58,6 +73,13 @@ _PG_init(void)
 	_event_trigger_init();
 	_process_utility_init();
 	_guc_init();
+	_conn_plain_init();
+#ifdef TS_USE_OPENSSL
+	_conn_ssl_init();
+#endif
+#ifdef TS_DEBUG
+	_conn_mock_init();
+#endif
 }
 
 void
@@ -67,6 +89,13 @@ _PG_fini(void)
 	 * Order of items should be strict reverse order of _PG_init. Please
 	 * document any exceptions.
 	 */
+#ifdef TS_DEBUG
+	_conn_mock_fini();
+#endif
+#ifdef TS_USE_OPENSSL
+	_conn_ssl_fini();
+#endif
+	_conn_plain_fini();
 	_guc_fini();
 	_process_utility_fini();
 	_event_trigger_fini();

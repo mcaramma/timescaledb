@@ -3,7 +3,7 @@ include(CheckCCompilerFlag)
 
 configure_file("version.config" "version.config" COPYONLY)
 file(READ version.config VERSION_CONFIG)
-set(VERSION_REGEX "version[\t ]*=[\t ]*([0-9]+\\.[0-9]+\\.*[0-9]*)([-]([a-z]+))*\r?\nupdate_from_version[\t ]*=[\t ]*([0-9]+\\.[0-9]+\\.*[0-9]*)(\r?\n)*$")
+set(VERSION_REGEX "version[\t ]*=[\t ]*([0-9]+\\.[0-9]+\\.*[0-9]*)([-]([a-z]+[0-9]*))*\r?\nupdate_from_version[\t ]*=[\t ]*([0-9]+\\.[0-9]+\\.*[0-9]*)([-]([a-z]+[0-9]*))*(\r?\n)*$")
 
 if (NOT (${VERSION_CONFIG} MATCHES ${VERSION_REGEX}))
   message(FATAL_ERROR "Cannot read version from version.config")
@@ -23,16 +23,26 @@ endif ()
 # Set project name, version, and language. Language needs to be set for compiler checks
 project(timescaledb VERSION ${VERSION} LANGUAGES C)
 
+if (NOT CMAKE_BUILD_TYPE)
+  # Default to Release builds
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build, options are: None Debug Release RelWithDebInfo MinSizeRel" FORCE)
+endif ()
+
 message(STATUS "TimescaleDB version ${PROJECT_VERSION_MOD}. Can be updated from version ${UPDATE_FROM_VERSION}")
 message(STATUS "Build type is ${CMAKE_BUILD_TYPE}")
 
 set(PROJECT_INSTALL_METHOD source CACHE STRING "Specify what install platform this binary
 is built for")
+message(STATUS "Install method is '${PROJECT_INSTALL_METHOD}'")
 
-if (NOT CMAKE_BUILD_TYPE)
-  # Default to Release builds
-  set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build, options are: None Debug Release RelWithDebInfo MinSizeRel" FORCE)
-endif ()
+if (CMAKE_BUILD_TYPE MATCHES Debug)
+  # CMAKE_BUILD_TYPE is set at CMake configuration type. But usage of CMAKE_C_FLAGS_DEBUG is
+  # determined at build time by running cmake --build . --config Debug (at least on Windows).
+  # Therefore, we only set these flags if the configuration-time CMAKE_BUILD_TYPE is set to
+  # Debug. Then Debug enabled builds will only happen on Windows if both the configuration-
+  # and build-time settings are Debug.
+  set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -DUSE_ASSERT_CHECKING=1 -DDEBUG=1 -DTS_DEBUG=1")
+endif (CMAKE_BUILD_TYPE MATCHES Debug)
 
 set(SUPPORTED_COMPILERS "GNU" "Clang" "AppleClang" "MSVC")
 
@@ -225,17 +235,68 @@ if (PG_SOURCE_DIR)
   message(STATUS "Found PostgreSQL source in ${PG_SOURCE_DIR}")
 endif (PG_SOURCE_DIR)
 
-if (UNIX)
-  add_subdirectory(test)
-  add_subdirectory(scripts)
-endif (UNIX)
-
-add_subdirectory(sql)
-add_subdirectory(src)
-
 set(EXT_CONTROL_FILE ${PROJECT_NAME}.control)
 configure_file(${EXT_CONTROL_FILE}.in ${EXT_CONTROL_FILE})
 
 install(
   FILES ${CMAKE_CURRENT_BINARY_DIR}/${EXT_CONTROL_FILE}
   DESTINATION "${PG_SHAREDIR}/extension")
+
+find_program(PGINDENT pgindent
+  HINTS ${PG_SOURCE_DIR}
+  PATH_SUFFIXES src/tools/pgindent
+  DOC "Format C code according to PostgreSQL standards")
+
+# Configuration for running pgindent
+if (PGINDENT)
+  message(STATUS "Using pgindent ${PGINDENT}")
+  file(WRITE ${CMAKE_BINARY_DIR}/pgindent_excludes "\\..*/\n")
+
+  add_custom_command(OUTPUT typedefs.list
+    DEPENDS ${PROJECT_NAME}
+    COMMAND sh ${PROJECT_BINARY_DIR}/scripts/generate_typedefs.sh > ${PROJECT_BINARY_DIR}/typedefs.list)
+  add_custom_target(pgindent
+    COMMAND ${PGINDENT} -typedefs typedefs.list -excludes=${PROJECT_BINARY_DIR}/pgindent_excludes -code-base=${PROJECT_SOURCE_DIR}/src
+    COMMAND ${PGINDENT} -typedefs typedefs.list -excludes=${PROJECT_BINARY_DIR}/pgindent_excludes -code-base=${PROJECT_SOURCE_DIR}/test/src
+    DEPENDS ${PROJECT_BINARY_DIR}/typedefs.list)
+else ()
+  message(STATUS "Install pgindent to be able to format C code: https://github.com/postgres/postgres/tree/master/src/tools/pgindent")
+endif (PGINDENT)
+
+option(USE_OPENSSL "Enable use of OpenSSL if available" ON)
+
+# Check if PostgreSQL has OpenSSL enabled by inspecting pg_config --configure.
+# Right now, a Postgres header will redefine an OpenSSL function if Postgres is not installed --with-openssl,
+# so in order for TimescaleDB to compile correctly with OpenSSL, Postgres must also have OpenSSL enabled.
+execute_process(
+  COMMAND ${PG_CONFIG} --configure
+  OUTPUT_VARIABLE PG_CONFIGURE_FLAGS
+  OUTPUT_STRIP_TRAILING_WHITESPACE)
+string(REGEX MATCH "--with-openssl" PG_USE_OPENSSL "${PG_CONFIGURE_FLAGS}")
+
+if (USE_OPENSSL AND (NOT PG_USE_OPENSSL))
+    message(FATAL_ERROR "PostgreSQL was built without OpenSSL support, which TimescaleDB needs for full compatibility. Please rebuild PostgreSQL using `--with-openssl` or if you want to continue without OpenSSL, re-run bootstrap with `-DUSE_OPENSSL=0`")
+endif (USE_OPENSSL AND (NOT PG_USE_OPENSSL))
+
+if (USE_OPENSSL)
+  # Try to find a local OpenSSL installation
+  include(FindOpenSSL)
+
+  if (NOT OPENSSL_FOUND)
+    message(FATAL_ERROR "TimescaleDB requires OpenSSL but it wasn't found. If you want to continue without OpenSSL, re-run bootstrap with `-DUSE_OPENSSL=0`")
+  endif(NOT OPENSSL_FOUND)
+
+  if (${OPENSSL_VERSION} VERSION_LESS "1.0")
+    message(FATAL_ERROR "TimescaleDB requires OpenSSL version 1.0 or greater")
+  endif ()
+
+  message(STATUS "Using OpenSSL version ${OPENSSL_VERSION}")
+endif (USE_OPENSSL)
+
+if (UNIX)
+  add_subdirectory(scripts)
+endif (UNIX)
+
+add_subdirectory(test)
+add_subdirectory(sql)
+add_subdirectory(src)

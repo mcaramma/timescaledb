@@ -213,13 +213,13 @@ calculate_open_range_default(Dimension *dim, int64 value)
 	return dimension_slice_create(dim->fd.id, range_start, range_end);
 }
 
-TS_FUNCTION_INFO_V1(dimension_calculate_open_range_default);
+TS_FUNCTION_INFO_V1(ts_dimension_calculate_open_range_default);
 
 /*
  * Expose open dimension range calculation for testing purposes.
  */
 Datum
-dimension_calculate_open_range_default(PG_FUNCTION_ARGS)
+ts_dimension_calculate_open_range_default(PG_FUNCTION_ARGS)
 {
 	int64		value = PG_GETARG_INT64(0);
 	Dimension	dim = {
@@ -264,13 +264,13 @@ calculate_closed_range_default(Dimension *dim, int64 value)
 	return dimension_slice_create(dim->fd.id, range_start, range_end);
 }
 
-TS_FUNCTION_INFO_V1(dimension_calculate_closed_range_default);
+TS_FUNCTION_INFO_V1(ts_dimension_calculate_closed_range_default);
 
 /*
  * Exposed closed dimension range calculation for testing purposes.
  */
 Datum
-dimension_calculate_closed_range_default(PG_FUNCTION_ARGS)
+ts_dimension_calculate_closed_range_default(PG_FUNCTION_ARGS)
 {
 	int64		value = PG_GETARG_INT64(0);
 	Dimension	dim = {
@@ -320,13 +320,14 @@ dimension_scan_internal(ScanKeyData *scankey,
 						tuple_found_func tuple_found,
 						void *data,
 						int limit,
+						int dimension_index,
 						LOCKMODE lockmode,
 						MemoryContext mctx)
 {
 	Catalog    *catalog = catalog_get();
 	ScannerCtx	scanctx = {
 		.table = catalog->tables[DIMENSION].id,
-		.index = catalog->tables[DIMENSION].index_ids[DIMENSION_HYPERTABLE_ID_IDX],
+		.index = catalog->tables[DIMENSION].index_ids[dimension_index],
 		.nkeys = nkeys,
 		.limit = limit,
 		.scankey = scankey,
@@ -347,11 +348,17 @@ dimension_scan(int32 hypertable_id, Oid main_table_relid, int16 num_dimensions, 
 	ScanKeyData scankey[1];
 
 	/* Perform an index scan on hypertable_id. */
-	ScanKeyInit(&scankey[0], Anum_dimension_hypertable_id_idx_hypertable_id,
+	ScanKeyInit(&scankey[0], Anum_dimension_hypertable_id_column_name_idx_hypertable_id,
 				BTEqualStrategyNumber, F_INT4EQ, Int32GetDatum(hypertable_id));
 
-	dimension_scan_internal(scankey, 1, dimension_tuple_found,
-							space, num_dimensions, AccessShareLock, mctx);
+	dimension_scan_internal(scankey,
+							1,
+							dimension_tuple_found,
+							space,
+							num_dimensions,
+							DIMENSION_HYPERTABLE_ID_COLUMN_NAME_IDX,
+							AccessShareLock,
+							mctx);
 
 	/* Sort dimensions in ascending order to allow binary search lookups */
 	qsort(space->dimensions, space->num_dimensions, sizeof(Dimension), cmp_dimension_id);
@@ -381,8 +388,14 @@ dimension_get_hypertable_id(int32 dimension_id)
 	ScanKeyInit(&scankey[0], Anum_dimension_id_idx_id,
 				BTEqualStrategyNumber, F_INT4EQ, Int32GetDatum(dimension_id));
 
-	ret = dimension_scan_internal(scankey, 1, dimension_find_hypertable_id_tuple_found,
-								  &hypertable_id, 1, AccessShareLock, CurrentMemoryContext);
+	ret = dimension_scan_internal(scankey,
+								  1,
+								  dimension_find_hypertable_id_tuple_found,
+								  &hypertable_id,
+								  1,
+								  DIMENSION_ID_IDX,
+								  AccessShareLock,
+								  CurrentMemoryContext);
 
 	if (ret == 1)
 		return hypertable_id;
@@ -446,11 +459,16 @@ dimension_delete_by_hypertable_id(int32 hypertable_id, bool delete_slices)
 	ScanKeyData scankey[1];
 
 	/* Perform an index scan to delete based on hypertable_id */
-	ScanKeyInit(&scankey[0], Anum_dimension_hypertable_id_idx_hypertable_id,
+	ScanKeyInit(&scankey[0], Anum_dimension_hypertable_id_column_name_idx_hypertable_id,
 				BTEqualStrategyNumber, F_INT4EQ, Int32GetDatum(hypertable_id));
 
-	return dimension_scan_internal(scankey, 1, dimension_tuple_delete,
-								   &delete_slices, 0, RowExclusiveLock,
+	return dimension_scan_internal(scankey,
+								   1,
+								   dimension_tuple_delete,
+								   &delete_slices,
+								   0,
+								   DIMENSION_HYPERTABLE_ID_COLUMN_NAME_IDX,
+								   RowExclusiveLock,
 								   CurrentMemoryContext);
 }
 
@@ -637,7 +655,7 @@ interval_to_usec(Interval *interval)
 }
 
 #define INT_TYPE_MAX(type)												\
-	(int64)((type == INT2OID) ? INT16_MAX : ((type == INT4OID) ? INT32_MAX : INT64_MAX))
+	(int64)(((type) == INT2OID) ? INT16_MAX : (((type) == INT4OID) ? INT32_MAX : INT64_MAX))
 
 #define IS_VALID_NUM_SLICES(num_slices)					\
 	((num_slices) >= 1 && (num_slices) <= INT16_MAX)
@@ -722,13 +740,13 @@ dimension_interval_to_internal(const char *colname,
 	return interval;
 }
 
-TS_FUNCTION_INFO_V1(dimension_interval_to_internal_test);
+TS_FUNCTION_INFO_V1(ts_dimension_interval_to_internal_test);
 
 /*
  * Exposed for testing purposes.
  */
 Datum
-dimension_interval_to_internal_test(PG_FUNCTION_ARGS)
+ts_dimension_interval_to_internal_test(PG_FUNCTION_ARGS)
 {
 	Oid			coltype = PG_GETARG_OID(0);
 	Datum		value = PG_GETARG_DATUM(1);
@@ -775,7 +793,7 @@ dimension_update(FunctionCallInfo fcinfo,
 
 	if (NULL == ht)
 		ereport(ERROR,
-				(errcode(ERRCODE_IO_HYPERTABLE_NOT_EXIST),
+				(errcode(ERRCODE_TS_HYPERTABLE_NOT_EXIST),
 				 errmsg("table \"%s\" is not a hypertable",
 						get_rel_name(table_relid))));
 
@@ -796,7 +814,7 @@ dimension_update(FunctionCallInfo fcinfo,
 
 	if (NULL == dim)
 		ereport(ERROR,
-				(errcode(ERRCODE_IO_DIMENSION_NOT_EXIST),
+				(errcode(ERRCODE_TS_DIMENSION_NOT_EXIST),
 				 errmsg("hypertable \"%s\" does not have a matching dimension",
 						get_rel_name(table_relid))));
 
@@ -821,10 +839,10 @@ dimension_update(FunctionCallInfo fcinfo,
 	cache_release(hcache);
 }
 
-TS_FUNCTION_INFO_V1(dimension_set_num_slices);
+TS_FUNCTION_INFO_V1(ts_dimension_set_num_slices);
 
 Datum
-dimension_set_num_slices(PG_FUNCTION_ARGS)
+ts_dimension_set_num_slices(PG_FUNCTION_ARGS)
 {
 	Oid			table_relid = PG_GETARG_OID(0);
 	int32		num_slices_arg = PG_ARGISNULL(1) ? -1 : PG_GETARG_INT32(1);
@@ -851,10 +869,10 @@ dimension_set_num_slices(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
-TS_FUNCTION_INFO_V1(dimension_set_interval);
+TS_FUNCTION_INFO_V1(ts_dimension_set_interval);
 
 Datum
-dimension_set_interval(PG_FUNCTION_ARGS)
+ts_dimension_set_interval(PG_FUNCTION_ARGS)
 {
 	Oid			table_relid = PG_GETARG_OID(0);
 	Datum		interval = PG_GETARG_DATUM(1);
@@ -924,7 +942,7 @@ dimension_validate_info(DimensionInfo *info)
 		{
 			if (!info->if_not_exists)
 				ereport(ERROR,
-						(errcode(ERRCODE_IO_DUPLICATE_DIMENSION),
+						(errcode(ERRCODE_TS_DUPLICATE_DIMENSION),
 						 errmsg("column \"%s\" is already a dimension",
 								NameStr(*info->colname))));
 
@@ -981,7 +999,7 @@ dimension_add_from_info(DimensionInfo *info)
 					 info->num_slices, info->partitioning_func, info->interval);
 }
 
-TS_FUNCTION_INFO_V1(dimension_add);
+TS_FUNCTION_INFO_V1(ts_dimension_add);
 
 /*
  * Add a new dimension to a hypertable.
@@ -995,7 +1013,7 @@ TS_FUNCTION_INFO_V1(dimension_add);
  * 5. IF NOT EXISTS option (bool)
  */
 Datum
-dimension_add(PG_FUNCTION_ARGS)
+ts_dimension_add(PG_FUNCTION_ARGS)
 {
 	Cache	   *hcache = hypertable_cache_pin();
 	DimensionInfo info = {
@@ -1028,7 +1046,7 @@ dimension_add(PG_FUNCTION_ARGS)
 
 	if (NULL == info.ht)
 		ereport(ERROR,
-				(errcode(ERRCODE_IO_HYPERTABLE_NOT_EXIST),
+				(errcode(ERRCODE_TS_HYPERTABLE_NOT_EXIST),
 				 errmsg("table \"%s\" is not a hypertable",
 						get_rel_name(info.table_relid))));
 

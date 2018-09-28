@@ -9,6 +9,9 @@
 #include "tablespace.h"
 #include "scanner.h"
 
+#define OLD_INSERT_BLOCKER_NAME	"insert_blocker"
+#define INSERT_BLOCKER_NAME "ts_insert_blocker"
+
 typedef struct SubspaceStore SubspaceStore;
 typedef struct Chunk Chunk;
 typedef struct HeapTupleData *HeapTuple;
@@ -22,6 +25,7 @@ typedef struct Hypertable
 	SubspaceStore *chunk_cache;
 } Hypertable;
 
+extern int	number_of_hypertables(void);
 
 extern Oid	rel_get_owner(Oid relid);
 extern Hypertable *hypertable_get_by_id(int32 hypertable_id);

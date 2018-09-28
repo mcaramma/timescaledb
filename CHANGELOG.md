@@ -4,6 +4,130 @@
 `psql` with the `-X` flag to prevent any `.psqlrc` commands from
 accidentally triggering the load of a previous DB version.**
 
+## 1.0.0-rc2 (2018-09-27)
+
+This release is our second 1.0 release candidate. We expect to only merge bug fixes between now and our final 1.0 release. This is a big milestone for us and signifies our maturity and enterprise readiness.
+
+**PLEASE NOTE** that release candidate (rc) builds will only be made available via GitHub and Docker, and _not_ on other release channels. Please help us test these release candidates out if you can!
+
+**Potential breaking change**: We updated our error codes to be prefixed with `TS` instead of the old `IO` prefix. If you were checking for these error codes by name, please update your checks.
+
+**Notable commits**
+* [b43574f] Switch 'IO' error prefix to 'TS'
+* [9747885] Prefix public C functions with ts_
+* [39510c3] Block unknown alter table commands on  hypertables
+* [2408a83] Add support for ALTER TABLE SET TABLESPACE on hypertables
+* [41d9846] Enclose macro replacement list and arguments in parentheses
+* [cc59d51] Replace macro LEAST_TIMESTAMP by a static function
+* [281f363] Modify telemetry BGW to run every hour the first 12 hours
+* [a09b3ec] Add pg_isolation_regress support to the timescale build system
+* [2c267ba] Handle SIGTERM/SIGINT asynchronously
+* [5377e2d] Fix use-after-free bug for connections in the telemetry BGW
+* [248f662] Fix pg_dump for unprivileged users
+* [193fa4a] Stop background workers when extension is DROP OWNED
+* [625e3fa] Fix negative value handling in int time_bucket
+* [a33224b] Add loader API version function
+* [18b8068] Remove unnecessary index on dimension metadata table
+* [d09405d] Fix adaptive chunking when hypertables have multiple dimensions
+* [a81dc18] Block signals when writing to the log table in tests
+* [d5a6392] Fix adaptive chunking so it chooses correct index
+* [3489cca] Fix sigterm handling in background jobs
+* [2369ae9] Remove !WIN32 for sys/time.h and sys/socket.h, pg provides fills
+* [ebbb4ae] Also add sys/time.h for NetBSD. Fixes #700
+* [1a9ae17] Fix build on FreeBSD wrt sockets
+* [8225cd2] Remove (redefined) macro PG_VERSION and replace with PACKAGE_VERSION
+* [2a07cf9] Release SpinLock even when we're about to Error due to over-decrementing
+* [b2a15b8] Make sure DB schedulers are not decremented if they were never incremented
+* [6731c86] Add support for pre-release version checks
+
+**Thanks**
+* @did-g for an improvement to our macros to make compiliers happy
+* @mx781 and @HeikoOnnebrink for reporting issues with working with pg_dump fully
+* @znbang and @timolson for reporting a bug that was causing telemetry to fail
+* @alanhamlett for reporting an issue with spinlocks when handling SIGTERMs
+* @oldgreen for reporting an issue with building on NetBSD
+* @kev009 for fixing build issues on FreeBSD and NetBSD
+* All the others who have helped us test and used these RCs!
+
+
+## 0.12.1 (2018-09-19)
+
+**High-level changes**
+
+* Fixes for a few issues related to the new scheduler and background worker framework.
+* Fixed bug in adaptive chunking where the incorrect index could be used for determining the current interval.
+* Improved testing, code cleanup, and other housekeeping.
+
+**Notable commits**
+* [0f6f7fc] Fix adaptive chunking so it chooses correct index
+* [3ed79ed] Fix sigterm handling in background jobs
+* [bea098f] Remove !WIN32 for sys/time.h and sys/socket.h, pg provides fills
+* [9f62a1a] Also add sys/time.h for NetBSD. Fixes #700
+* [95a982f] Fix build on FreeBSD wrt sockets
+* [fcb4a79] Remove (redefined) macro PG_VERSION and replace with PACKAGE_VERSION
+* [2634897] Release SpinLock even when we're about to Error due to over-decrementing
+* [1f30dbb] Make sure DB schedulers are not decremented if they were never incremented
+* [f518cd0] Add support for pre-release version checks
+* [acebaea] Don't start schedulers for template databases.
+* [f221a12] Fix use-after-free bug in telemetry test
+* [0dc5bbb] Use pg_config bindir directory for pg executables
+
+**Thanks**
+* @did-g for reporting a use-after-free bug in a test and for improving the robustness of another test
+* @kev009 for fixing build issues on FreeBSD and NetBSD
+
+
+## 1.0.0-rc1 (2018-09-12)
+
+This release is our 1.0 release candidate. We expect to only merge bug fixes between now and our final 1.0 release. This is a big milestone for us and signifies our maturity and enterprise readiness.
+
+**PLEASE NOTE** that release candidate (rc) builds will only be made available via GitHub and Docker, and _not_ on other release channels. Please help us test these release candidates out if you can!
+
+
+**Notable commits**
+* [acebaea] Don't start schedulers for template databases.
+* [f221a12] Fix use-after-free bug in telemetry test
+* [2092b2a] Fix unused variable warning in Release build
+* [0dc5bbb] Use pg_config bindir directory for pg executables
+
+**Thanks**
+* @did-g for reporting a use-after-free bug in a test and for improving the robustness of another test
+
+
+## 0.12.0 (2018-09-10)
+
+**High-level changes**
+
+*Scheduler framework:* This release introduces a background job framework and scheduler. Each database running within a PostgreSQL instance has a scheduler that schedules recurring jobs from a new jobs table while maintaining statistics that inform the scheduler's policy. Future releases will leverage this scheduler framework for more automated management of data retention, archiving, analytics, and the like.
+
+*Telemetry:* Using this new scheduler framework, TimescaleDB databases now send anonymized usage information to a telemetry server via HTTPS, as well as perform version checking to notify users if a newer version is available. For transparency, a new `get_telemetry_report` function details the exact JSON that is sent, and users may also opt out of this telemetry and version check.
+
+*Continued hardening:* This release addresses several issues around more robust backup and recovery, handling large numbers of chunks, and additional test coverage.
+
+**Notable commits**
+
+* [efab2aa] Fix net lib functionality on Windows and improve error handling
+* [71589c4] Fix issues when OpenSSL is not available
+* [a43cd04] Call the main telemetry function inside BGW executor
+* [faf481b] Add telemetry functionality
+* [45a2b76] Add new Connection and HTTP libraries
+* [b6fe657] Fix max_background_workers guc, errors on EXEC_BACKEND and formatting
+* [5d8c7cc] Add a scheduler for background jobs
+* [55a7141] Implement a cluster-wide launcher for background workers
+* [5bc705f] Update bootstrap to check for cmake and exit if not found
+* [98e56dd] Improve show_indexes test func to be more platform agnostic
+* [b928caa] Note how to recreate templated files
+* [8571e41] Use AttrNumberGetAttrOffset instead of Anum_name - 1 for array indexing
+* [d1710ef] Improve regression test script to cleanup more thoroughly
+* [fc3677f] Reduce number of open chunks per insert
+* [027b7b2] Hide extension symbols by default on Unix platforms
+* [6a3abe5] Fix SubspaceStore to ensure max_open_chunks_per_insert is obeyed
+
+**Thanks**
+
+@EvanCarroll for updates to the bootstrap script to check for cmake
+
+
 ## 0.11.0 (2018-08-08)
 
 **High-level changes**
@@ -50,6 +174,7 @@ accidentally triggering the load of a previous DB version.**
 * @fvannee for a PR adding support for binary compatible custom types as a time column
 * @fmacelw for reporting a bug where first() and last() hold reference across extension update
 * @soccerdroid for reporting a corner case bug in ALTER TABLE
+
 
 ## 0.10.1 (2018-07-12)
 

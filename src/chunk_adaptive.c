@@ -51,10 +51,10 @@ convert_text_memory_amount_to_bytes(const char *memory_amount)
  * Exposed for testing purposes to be able to simulate a different memory
  * cache size in tests.
  */
-TS_FUNCTION_INFO_V1(set_memory_cache_size);
+TS_FUNCTION_INFO_V1(ts_set_memory_cache_size);
 
 Datum
-set_memory_cache_size(PG_FUNCTION_ARGS)
+ts_set_memory_cache_size(PG_FUNCTION_ARGS)
 {
 	const char *memory_amount = text_to_cstring(PG_GETARG_TEXT_P(0));
 
@@ -204,6 +204,7 @@ minmax_indexscan(Relation rel, Relation idxrel, AttrNumber attnum, Datum minmax[
 static MinMaxResult
 relation_minmax_indexscan(Relation rel,
 						  Oid atttype,
+						  Name attname,
 						  AttrNumber attnum,
 						  Datum minmax[2])
 {
@@ -217,7 +218,7 @@ relation_minmax_indexscan(Relation rel,
 
 		idxrel = index_open(lfirst_oid(lc), AccessShareLock);
 
-		if (idxrel->rd_att->attrs[0]->attnum == attnum)
+		if (idxrel->rd_att->attrs[0]->atttypid == atttype && namestrcmp(&idxrel->rd_att->attrs[0]->attname, NameStr(*attname)) == 0)
 			res = minmax_indexscan(rel, idxrel, attnum, minmax);
 
 		index_close(idxrel, AccessShareLock);
@@ -230,11 +231,11 @@ relation_minmax_indexscan(Relation rel,
 }
 
 static bool
-table_has_minmax_index(Oid relid, Oid atttype, AttrNumber attnum)
+table_has_minmax_index(Oid relid, Oid atttype, Name attname, AttrNumber attnum)
 {
 	Datum		minmax[2];
 	Relation	rel = heap_open(relid, AccessShareLock);
-	MinMaxResult res = relation_minmax_indexscan(rel, atttype, attnum, minmax);
+	MinMaxResult res = relation_minmax_indexscan(rel, atttype, attname, attnum, minmax);
 
 	heap_close(rel, AccessShareLock);
 
@@ -250,13 +251,17 @@ static bool
 chunk_get_minmax(Oid relid, Oid atttype, AttrNumber attnum, Datum minmax[2])
 {
 	Relation	rel = heap_open(relid, AccessShareLock);
-	MinMaxResult res = relation_minmax_indexscan(rel, atttype, attnum, minmax);
+	NameData	attname;
+	MinMaxResult res;
+
+	namestrcpy(&attname, get_attname(relid, attnum));
+	res = relation_minmax_indexscan(rel, atttype, &attname, attnum, minmax);
 
 	if (res == MINMAX_NO_INDEX)
 	{
 		ereport(WARNING,
 				(errmsg("no index on \"%s\" found for adaptive chunking on chunk \"%s\"",
-						get_attname(relid, attnum), get_rel_name(relid)),
+						NameStr(attname), get_rel_name(relid)),
 				 errdetail("Adaptive chunking works best with an index on the dimension being adapted.")));
 
 		res = minmax_heapscan(rel, atttype, attnum, minmax);
@@ -299,7 +304,7 @@ chunk_get_attno(Oid hypertable_relid, Oid chunk_relid, AttrNumber hypertable_att
  * and be used in normal prediction mode */
 #define UNDERSIZED_FILLFACTOR_THRESH (SIZE_FILLFACTOR_THRESH * 1.1)
 
-TS_FUNCTION_INFO_V1(calculate_chunk_interval);
+TS_FUNCTION_INFO_V1(ts_calculate_chunk_interval);
 
 /*
  * Calculate a new interval for a chunk in a given dimension.
@@ -381,7 +386,7 @@ TS_FUNCTION_INFO_V1(calculate_chunk_interval);
  * further if needed.
  */
 Datum
-calculate_chunk_interval(PG_FUNCTION_ARGS)
+ts_calculate_chunk_interval(PG_FUNCTION_ARGS)
 {
 	int32		dimension_id = PG_GETARG_INT32(0);
 	int64		dimension_coord = PG_GETARG_INT64(1);
@@ -422,7 +427,7 @@ calculate_chunk_interval(PG_FUNCTION_ARGS)
 	current_interval = dim->fd.interval_length;
 
 	/* Get a window of recent chunks */
-	chunks = chunk_get_window(hypertable_id,
+	chunks = chunk_get_window(dimension_id,
 							  dimension_coord,
 							  DEFAULT_CHUNK_WINDOW,
 							  CurrentMemoryContext);
@@ -635,6 +640,7 @@ void
 chunk_adaptive_sizing_info_validate(ChunkSizingInfo *info)
 {
 	AttrNumber	attnum;
+	NameData	attname;
 	Oid			atttype;
 
 	if (!OidIsValid(info->table_relid))
@@ -644,10 +650,11 @@ chunk_adaptive_sizing_info_validate(ChunkSizingInfo *info)
 
 	if (NULL == info->colname)
 		ereport(ERROR,
-				(errcode(ERRCODE_IO_DIMENSION_NOT_EXIST),
+				(errcode(ERRCODE_TS_DIMENSION_NOT_EXIST),
 				 errmsg("no open dimension found for adaptive chunking")));
 
 	attnum = get_attnum(info->table_relid, info->colname);
+	namestrcpy(&attname, info->colname);
 	atttype = get_atttype(info->table_relid, attnum);
 
 	if (!OidIsValid(atttype))
@@ -673,20 +680,20 @@ chunk_adaptive_sizing_info_validate(ChunkSizingInfo *info)
 		elog(WARNING, "target chunk size for adaptive chunking is less than 10 MB");
 
 	if (info->check_for_index &&
-		!table_has_minmax_index(info->table_relid, atttype, attnum))
+		!table_has_minmax_index(info->table_relid, atttype, &attname, attnum))
 		ereport(WARNING,
 				(errmsg("no index on \"%s\" found for adaptive chunking on hypertable \"%s\"",
 						info->colname, get_rel_name(info->table_relid)),
 				 errdetail("Adaptive chunking works best with an index on the dimension being adapted.")));
 }
 
-TS_FUNCTION_INFO_V1(chunk_adaptive_set);
+TS_FUNCTION_INFO_V1(ts_chunk_adaptive_set);
 
 /*
  * Change the settings for adaptive chunking.
  */
 Datum
-chunk_adaptive_set(PG_FUNCTION_ARGS)
+ts_chunk_adaptive_set(PG_FUNCTION_ARGS)
 {
 	ChunkSizingInfo info = {
 		.table_relid = PG_GETARG_OID(0),
@@ -714,7 +721,7 @@ chunk_adaptive_set(PG_FUNCTION_ARGS)
 
 	if (NULL == ht)
 		ereport(ERROR,
-				(errcode(ERRCODE_IO_HYPERTABLE_NOT_EXIST),
+				(errcode(ERRCODE_TS_HYPERTABLE_NOT_EXIST),
 				 errmsg("table \"%s\" is not a hypertable",
 						get_rel_name(info.table_relid))));
 
@@ -723,7 +730,7 @@ chunk_adaptive_set(PG_FUNCTION_ARGS)
 
 	if (NULL == dim)
 		ereport(ERROR,
-				(errcode(ERRCODE_IO_DIMENSION_NOT_EXIST),
+				(errcode(ERRCODE_TS_DIMENSION_NOT_EXIST),
 				 errmsg("no open dimension found for adaptive chunking")));
 
 	info.colname = NameStr(dim->fd.column_name);

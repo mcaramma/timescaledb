@@ -76,7 +76,7 @@ BEGIN
 
         IF missing_column IS NOT NULL THEN
             RAISE EXCEPTION 'Cannot create a unique index without the column: % (used in partitioning)', missing_column
-            USING ERRCODE = 'IO103';
+            USING ERRCODE = 'TS103';
         END IF;
     END IF;
 END
@@ -159,7 +159,7 @@ BEGIN
 
         IF constraint_row.connoinherit THEN
             RAISE 'NO INHERIT option not supported on hypertables: %', constraint_row.conname
-            USING ERRCODE = 'IO101';
+            USING ERRCODE = 'TS101';
         END IF;
 
         RETURN FALSE;
@@ -250,27 +250,27 @@ DROP FUNCTION IF EXISTS _timescaledb_internal.need_chunk_trigger(int, oid);
 -- Adding this in the update script because aggregates.sql is not rerun in case of an update
 CREATE OR REPLACE FUNCTION _timescaledb_internal.hist_sfunc (state INTERNAL, val DOUBLE PRECISION, MIN DOUBLE PRECISION, MAX DOUBLE PRECISION, nbuckets INTEGER)
 RETURNS INTERNAL
-AS '@MODULE_PATHNAME@', 'hist_sfunc'
+AS '@MODULE_PATHNAME@', 'ts_hist_sfunc'
 LANGUAGE C IMMUTABLE PARALLEL SAFE;
 
 CREATE OR REPLACE FUNCTION _timescaledb_internal.hist_combinefunc(state1 INTERNAL, state2 INTERNAL)
 RETURNS INTERNAL
-AS '@MODULE_PATHNAME@', 'hist_combinefunc'
+AS '@MODULE_PATHNAME@', 'ts_hist_combinefunc'
 LANGUAGE C IMMUTABLE PARALLEL SAFE;
 
 CREATE OR REPLACE FUNCTION _timescaledb_internal.hist_serializefunc(INTERNAL)
 RETURNS bytea
-AS '@MODULE_PATHNAME@', 'hist_serializefunc'
+AS '@MODULE_PATHNAME@', 'ts_hist_serializefunc'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
 CREATE OR REPLACE FUNCTION _timescaledb_internal.hist_deserializefunc(bytea, INTERNAL)
 RETURNS INTERNAL
-AS '@MODULE_PATHNAME@', 'hist_deserializefunc'
+AS '@MODULE_PATHNAME@', 'ts_hist_deserializefunc'
 LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
 
 CREATE OR REPLACE FUNCTION _timescaledb_internal.hist_finalfunc(state INTERNAL, val DOUBLE PRECISION, MIN DOUBLE PRECISION, MAX DOUBLE PRECISION, nbuckets INTEGER)
 RETURNS INTEGER[]
-AS '@MODULE_PATHNAME@', 'hist_finalfunc'
+AS '@MODULE_PATHNAME@', 'ts_hist_finalfunc'
 LANGUAGE C IMMUTABLE PARALLEL SAFE;
 
 -- This aggregate partitions the dataset into a specified number of buckets (nbuckets) ranging

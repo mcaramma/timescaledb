@@ -6,6 +6,7 @@
 #include <utils/rel.h>
 #include <nodes/nodes.h>
 #include <access/heapam.h>
+#include "extension_constants.h"
 /*
  * TimescaleDB catalog.
  *
@@ -30,6 +31,9 @@ typedef enum CatalogTable
 	CHUNK_CONSTRAINT,
 	CHUNK_INDEX,
 	TABLESPACE,
+	BGW_JOB,
+	BGW_JOB_STAT,
+	INSTALLATION_METADATA,
 	_MAX_CATALOG_TABLES,
 } CatalogTable;
 
@@ -54,9 +58,6 @@ typedef enum InternalFunction
 	_MAX_INTERNAL_FUNCTIONS,
 } InternalFunction;
 
-#define CATALOG_SCHEMA_NAME "_timescaledb_catalog"
-#define CACHE_SCHEMA_NAME "_timescaledb_cache"
-#define INTERNAL_SCHEMA_NAME "_timescaledb_internal"
 
 /******************************
  *
@@ -177,9 +178,10 @@ enum Anum_dimension_id_idx
 #define Natts_dimension_id_idx \
 	(_Anum_dimension_id_idx_max - 1)
 
-enum Anum_dimension_hypertable_id_idx
+enum Anum_dimension_hypertable_id_column_name_idx
 {
-	Anum_dimension_hypertable_id_idx_hypertable_id = 1,
+	Anum_dimension_hypertable_id_column_name_idx_hypertable_id = 1,
+	Anum_dimension_hypertable_id_column_name_idx_column_name,
 	_Anum_dimension_hypertable_id_idx_max,
 };
 
@@ -189,7 +191,7 @@ enum Anum_dimension_hypertable_id_idx
 enum
 {
 	DIMENSION_ID_IDX = 0,
-	DIMENSION_HYPERTABLE_ID_IDX,
+	DIMENSION_HYPERTABLE_ID_COLUMN_NAME_IDX,
 	_MAX_DIMENSION_INDEX,
 };
 
@@ -467,18 +469,167 @@ typedef struct FormData_tablespace_hypertable_id_tablespace_name_idx
 	NameData	tablespace_name;
 }			FormData_tablespace_hypertable_id_tablespace_name_idx;
 
+/************************************
+ *
+ * bgw_job table definitions
+ *
+ ************************************/
 
-#define MAX(a, b) \
-	((long)(a) > (long)(b) ? (a) : (b))
+#define BGW_JOB_TABLE_NAME "bgw_job"
 
-#define _MAX_TABLE_INDEXES								\
-	MAX(_MAX_HYPERTABLE_INDEX,							\
-		MAX(_MAX_DIMENSION_INDEX,						\
-			MAX(_MAX_DIMENSION_SLICE_INDEX,				\
-				MAX(_MAX_CHUNK_CONSTRAINT_INDEX,		\
-					MAX(_MAX_CHUNK_INDEX_INDEX,			\
-						MAX(_MAX_TABLESPACE_INDEX,		\
-							_MAX_CHUNK_INDEX))))))
+enum Anum_bgw_job
+{
+	Anum_bgw_job_id = 1,
+	Anum_bgw_job_application_name,
+	Anum_bgw_job_job_type,
+	Anum_bgw_job_schedule_interval,
+	Anum_bgw_job_max_runtime,
+	Anum_bgw_job_max_retries,
+	Anum_bgw_job_retry_period,
+	_Anum_bgw_job_max,
+};
+
+#define Natts_bgw_job \
+	(_Anum_bgw_job_max - 1)
+
+typedef struct FormData_bgw_job
+{
+	int32		id;
+	NameData	application_name;
+	NameData	job_type;
+	Interval	schedule_interval;
+	Interval	max_runtime;
+	int32		max_retries;
+	Interval	retry_period;
+} FormData_bgw_job;
+
+typedef FormData_bgw_job *Form_bgw_job;
+
+enum
+{
+	BGW_JOB_PKEY_IDX = 0,
+	_MAX_BGW_JOB_INDEX,
+};
+
+enum Anum_bgw_job_pkey_idx
+{
+	Anum_bgw_job_pkey_idx_id = 1,
+	_Anum_bgw_job_pkey_idx_max,
+};
+
+#define Natts_bjw_job_pkey_idx \
+	(_Anum_bgw_job_pkey_idx_max - 1)
+
+
+
+/************************************
+ *
+ * bgw_job_stat table definitions
+ *
+ ************************************/
+
+#define BGW_JOB_STAT_TABLE_NAME "bgw_job_stat"
+
+enum Anum_bgw_job_stat
+{
+	Anum_bgw_job_stat_job_id = 1,
+	Anum_bgw_job_stat_last_start,
+	Anum_bgw_job_stat_last_finish,
+	Anum_bgw_job_stat_next_start,
+	Anum_bgw_job_stat_last_run_success,
+	Anum_bgw_job_stat_total_runs,
+	Anum_bgw_job_stat_total_duration,
+	Anum_bgw_job_stat_total_success,
+	Anum_bgw_job_stat_total_failures,
+	Anum_bgw_job_stat_total_crashes,
+	Anum_bgw_job_stat_consecutive_failures,
+	Anum_bgw_job_stat_consecutive_crashes,
+	_Anum_bgw_job_stat_max,
+};
+
+#define Natts_bgw_job_stat \
+	(_Anum_bgw_job_stat_max - 1)
+
+typedef struct FormData_bgw_job_stat
+{
+	int32		id;
+	TimestampTz last_start;
+	TimestampTz last_finish;
+	TimestampTz next_start;
+	bool		last_run_success;
+	int64		total_runs;
+	Interval	total_duration;
+	int64		total_success;
+	int64		total_failures;
+	int64		total_crashes;
+	int32		consecutive_failures;
+	int32		consecutive_crashes;
+} FormData_bgw_job_stat;
+
+typedef FormData_bgw_job_stat *Form_bgw_job_stat;
+
+enum
+{
+	BGW_JOB_STAT_PKEY_IDX = 0,
+	_MAX_BGW_JOB_STAT_INDEX,
+};
+
+enum Anum_bgw_job_stat_pkey_idx
+{
+	Anum_bgw_job_stat_pkey_idx_job_id = 1,
+	_Anum_bgw_job_stat_pkey_idx_max,
+};
+
+#define Natts_bjw_job_stat_pkey_idx \
+	(_Anum_bgw_job_stat_pkey_idx_max - 1)
+
+/******************************
+ *
+ * installation_metadata table definitions
+ *
+ ******************************/
+
+#define INSTALLATION_METADATA_TABLE_NAME		"installation_metadata"
+
+enum Anum_installation_metadata
+{
+	Anum_installation_metadata_key = 1,
+	Anum_installation_metadata_value,
+	_Anum_installation_metadata_max,
+};
+
+#define Natts_installation_metadata \
+	(_Anum_installation_metadata_max - 1)
+
+typedef struct FormData_installation_metadata
+{
+	NameData	key;
+	text	   *value;
+} FormData_installation_metadata;
+
+typedef FormData_installation_metadata *Form_installation_metadata;
+
+/* installation_metadata primary index attribute numbers */
+enum Anum_installation_metadata_pkey_idx
+{
+	Anum_installation_metadata_pkey_idx_id = 1,
+	_Anum_installation_metadata_pkey_max,
+};
+
+#define Natts_installation_metadata_pkey_idx \
+	(_Anum_installation_metadata_pkey_max - 1)
+
+enum
+{
+	INSTALLATION_METADATA_PKEY_IDX = 0,
+	_MAX_INSTALLATION_METADATA_INDEX,
+};
+
+/*
+ * The maximum number of indexes a catalog table can have.
+ * This needs to be bumped in case of new catalog tables that have more indexes.
+ */
+#define _MAX_TABLE_INDEXES 5
 
 typedef enum CacheType
 {
@@ -494,10 +645,11 @@ typedef struct Catalog
 	Oid			schema_id;
 	struct
 	{
+		const char *schema_name;
 		const char *name;
 		Oid			id;
-		Oid			index_ids[_MAX_TABLE_INDEXES];
 		Oid			serial_relid;
+		Oid			index_ids[_MAX_TABLE_INDEXES];
 	}			tables[_MAX_CATALOG_TABLES];
 
 	Oid			cache_schema_id;

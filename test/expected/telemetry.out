@@ -1,0 +1,289 @@
+\c single :ROLE_SUPERUSER
+CREATE OR REPLACE FUNCTION _timescaledb_internal.test_status(int) RETURNS JSONB
+    AS :MODULE_PATHNAME, 'ts_test_status' LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+CREATE OR REPLACE FUNCTION _timescaledb_internal.test_status_ssl(int) RETURNS JSONB
+    AS :MODULE_PATHNAME, 'ts_test_status_ssl' LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+CREATE OR REPLACE FUNCTION _timescaledb_internal.test_status_mock(text) RETURNS JSONB
+    AS :MODULE_PATHNAME, 'ts_test_status_mock' LANGUAGE C IMMUTABLE STRICT PARALLEL SAFE;
+CREATE OR REPLACE FUNCTION _timescaledb_internal.test_telemetry_parse_version(response text, installed_major int, installed_minor int, installed_patch int, installed_modtag text = NULL)
+    RETURNS TABLE(version_string text, major int, minor int, patch int, modtag text, up_to_date bool)
+    AS :MODULE_PATHNAME, 'ts_test_telemetry_parse_version' LANGUAGE C IMMUTABLE PARALLEL SAFE;
+CREATE OR REPLACE FUNCTION _timescaledb_internal.test_telemetry_main_conn(text, text, text)
+RETURNS BOOLEAN AS :MODULE_PATHNAME, 'ts_test_telemetry_main_conn' LANGUAGE C IMMUTABLE PARALLEL SAFE;
+CREATE OR REPLACE FUNCTION _timescaledb_internal.test_telemetry(host text = NULL, servname text = NULL, port int = NULL) RETURNS JSONB AS :MODULE_PATHNAME, 'ts_test_telemetry' LANGUAGE C IMMUTABLE PARALLEL SAFE;
+\c single :ROLE_DEFAULT_PERM_USER
+SELECT _timescaledb_internal.test_status_ssl(200);
+ test_status_ssl 
+-----------------
+ {"status": 200}
+(1 row)
+
+SELECT _timescaledb_internal.test_status_ssl(201);
+ test_status_ssl 
+-----------------
+ {"status": 201}
+(1 row)
+
+\set ON_ERROR_STOP 0
+SELECT _timescaledb_internal.test_status_ssl(304);
+ERROR:  endpoint sent back unexpected HTTP status: 304
+SELECT _timescaledb_internal.test_status_ssl(400);
+ERROR:  endpoint sent back unexpected HTTP status: 400
+SELECT _timescaledb_internal.test_status_ssl(401);
+ERROR:  endpoint sent back unexpected HTTP status: 401
+SELECT _timescaledb_internal.test_status_ssl(404);
+ERROR:  endpoint sent back unexpected HTTP status: 404
+SELECT _timescaledb_internal.test_status_ssl(500);
+ERROR:  endpoint sent back unexpected HTTP status: 500
+SELECT _timescaledb_internal.test_status_ssl(503);
+ERROR:  endpoint sent back unexpected HTTP status: 503
+\set ON_ERROR_STOP 1
+SELECT _timescaledb_internal.test_status(200);
+   test_status   
+-----------------
+ {"status": 200}
+(1 row)
+
+SELECT _timescaledb_internal.test_status(201);
+   test_status   
+-----------------
+ {"status": 201}
+(1 row)
+
+\set ON_ERROR_STOP 0
+SELECT _timescaledb_internal.test_status(304);
+ERROR:  endpoint sent back unexpected HTTP status: 304
+SELECT _timescaledb_internal.test_status(400);
+ERROR:  endpoint sent back unexpected HTTP status: 400
+SELECT _timescaledb_internal.test_status(401);
+ERROR:  endpoint sent back unexpected HTTP status: 401
+SELECT _timescaledb_internal.test_status(404);
+ERROR:  endpoint sent back unexpected HTTP status: 404
+SELECT _timescaledb_internal.test_status(500);
+ERROR:  endpoint sent back unexpected HTTP status: 500
+SELECT _timescaledb_internal.test_status(503);
+ERROR:  endpoint sent back unexpected HTTP status: 503
+\set ON_ERROR_STOP 1
+-- This function runs the test 5 times, because each time the internal C function is choosing a random length to send from the server on each socket read. We hit many cases this way.
+CREATE OR REPLACE FUNCTION mocker(TEXT) RETURNS SETOF TEXT AS
+$BODY$
+DECLARE
+r TEXT;
+BEGIN
+FOR i in 1..5 LOOP
+SELECT _timescaledb_internal.test_status_mock($1) INTO r;
+RETURN NEXT r;
+END LOOP;
+RETURN;
+END
+$BODY$
+LANGUAGE 'plpgsql';
+select * from mocker(
+        E'HTTP/1.1 200 OK\r\n'
+        'Content-Type: application/json; charset=utf-8\r\n'
+        'Date: Thu, 12 Jul 2018 18:33:04 GMT\r\n'
+        'ETag: W/\"e-upYEWCL+q6R/++2nWHz5b76hBgo\"\r\n'
+        'Server: nginx\r\n'
+        'Vary: Accept-Encoding\r\n'
+        'Content-Length: 14\r\n'
+        'Connection: Close\r\n\r\n'
+        '{\"status\":200}');
+     mocker      
+-----------------
+ {"status": 200}
+ {"status": 200}
+ {"status": 200}
+ {"status": 200}
+ {"status": 200}
+(5 rows)
+
+select * from mocker(
+        E'HTTP/1.1 201 OK\r\n'
+        'Content-Type: application/json; charset=utf-8\r\n'
+        'Vary: Accept-Encoding\r\n'
+        'Content-Length: 14\r\n'
+        'Connection: Close\r\n\r\n'
+        '{\"status\":201}');
+     mocker      
+-----------------
+ {"status": 201}
+ {"status": 201}
+ {"status": 201}
+ {"status": 201}
+ {"status": 201}
+(5 rows)
+
+\set ON_ERROR_STOP 0
+\set test_string 'HTTP/1.1 404 Not Found\r\nContent-Length: 14\r\nConnection: Close\r\n\r\n{\"status\":404}';
+SELECT _timescaledb_internal.test_status_mock(:'test_string');
+ERROR:  endpoint sent back unexpected HTTP status: 404
+SELECT _timescaledb_internal.test_status_mock(:'test_string');
+ERROR:  endpoint sent back unexpected HTTP status: 404
+SELECT _timescaledb_internal.test_status_mock(:'test_string');
+ERROR:  endpoint sent back unexpected HTTP status: 404
+SELECT _timescaledb_internal.test_status_mock(:'test_string');
+ERROR:  endpoint sent back unexpected HTTP status: 404
+SELECT _timescaledb_internal.test_status_mock(:'test_string');
+ERROR:  endpoint sent back unexpected HTTP status: 404
+\set test_string 'Content-Length: 14\r\nConnection: Close\r\n\r\n{\"status\":404}';
+SELECT _timescaledb_internal.test_status_mock(:'test_string');
+ERROR:  could not parse HTTP response
+SELECT _timescaledb_internal.test_status_mock(:'test_string');
+ERROR:  could not parse HTTP response
+SELECT _timescaledb_internal.test_status_mock(:'test_string');
+ERROR:  could not parse HTTP response
+SELECT _timescaledb_internal.test_status_mock(:'test_string');
+ERROR:  could not parse HTTP response
+SELECT _timescaledb_internal.test_status_mock(:'test_string');
+ERROR:  could not parse HTTP response
+\set test_string 'HTTP/1.1 404 Not Found\r\nContent-Length: 14\r\nConnection: Close\r\n{\"status\":404}';
+SELECT _timescaledb_internal.test_status_mock(:'test_string');
+ERROR:  could not parse HTTP response
+SELECT _timescaledb_internal.test_status_mock(:'test_string');
+ERROR:  could not parse HTTP response
+SELECT _timescaledb_internal.test_status_mock(:'test_string');
+ERROR:  could not parse HTTP response
+SELECT _timescaledb_internal.test_status_mock(:'test_string');
+ERROR:  could not parse HTTP response
+SELECT _timescaledb_internal.test_status_mock(:'test_string');
+ERROR:  could not parse HTTP response
+\set ON_ERROR_STOP 1
+-- Test parsing version response
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"status": "200", "current_timescaledb_version": "10.1.0"}', 10, 1, 0);
+ version_string | major | minor | patch | modtag | up_to_date 
+----------------+-------+-------+-------+--------+------------
+ 10.1.0         |    10 |     1 |     0 |        | t
+(1 row)
+
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"current_timescaledb_version": "10.1"}', 10, 1, 0);
+ version_string | major | minor | patch | modtag | up_to_date 
+----------------+-------+-------+-------+--------+------------
+ 10.1           |    10 |     1 |     0 |        | t
+(1 row)
+
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"current_timescaledb_version": "10"}', 10, 1, 0);
+ version_string | major | minor | patch | modtag | up_to_date 
+----------------+-------+-------+-------+--------+------------
+ 10             |    10 |     0 |     0 |        | t
+(1 row)
+
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"current_timescaledb_version": "10"}', 9, 1, 1);
+ version_string | major | minor | patch | modtag | up_to_date 
+----------------+-------+-------+-------+--------+------------
+ 10             |    10 |     0 |     0 |        | f
+(1 row)
+
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"current_timescaledb_version": "9.2.0"}', 9, 1, 1);
+ version_string | major | minor | patch | modtag | up_to_date 
+----------------+-------+-------+-------+--------+------------
+ 9.2.0          |     9 |     2 |     0 |        | f
+(1 row)
+
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"current_timescaledb_version": "9.1.2"}', 9, 1, 1);
+ version_string | major | minor | patch | modtag | up_to_date 
+----------------+-------+-------+-------+--------+------------
+ 9.1.2          |     9 |     1 |     2 |        | f
+(1 row)
+
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"current_timescaledb_version": "1.0.0"}', 1, 0, 0, 'rc1');
+ version_string | major | minor | patch | modtag | up_to_date 
+----------------+-------+-------+-------+--------+------------
+ 1.0.0          |     1 |     0 |     0 |        | f
+(1 row)
+
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"current_timescaledb_version": "1.0.0-rc1"}', 1, 0, 0, 'rc1');
+ version_string | major | minor | patch | modtag | up_to_date 
+----------------+-------+-------+-------+--------+------------
+ 1.0.0-rc1      |     1 |     0 |     0 | rc1    | t
+(1 row)
+
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"current_timescaledb_version": "1.0.0-rc1"}', 1, 0, 0, 'rc2');
+ version_string | major | minor | patch | modtag | up_to_date 
+----------------+-------+-------+-------+--------+------------
+ 1.0.0-rc1      |     1 |     0 |     0 | rc1    | t
+(1 row)
+
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"current_timescaledb_version": "1.0.0-rc2"}', 1, 0, 0, 'rc1');
+ version_string | major | minor | patch | modtag | up_to_date 
+----------------+-------+-------+-------+--------+------------
+ 1.0.0-rc2      |     1 |     0 |     0 | rc2    | f
+(1 row)
+
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"current_timescaledb_version": "1.0.0-rc1"}', 1, 0, 0, 'alpha');
+ version_string | major | minor | patch | modtag | up_to_date 
+----------------+-------+-------+-------+--------+------------
+ 1.0.0-rc1      |     1 |     0 |     0 | rc1    | f
+(1 row)
+
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"current_timescaledb_version": "1.0.0-alpha"}', 1, 0, 0, 'rc1');
+ version_string | major | minor | patch | modtag | up_to_date 
+----------------+-------+-------+-------+--------+------------
+ 1.0.0-alpha    |     1 |     0 |     0 | alpha  | t
+(1 row)
+
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"current_timescaledb_version": "1.0.0-rc1"}', 1, 0, 1, 'rc1');
+ version_string | major | minor | patch | modtag | up_to_date 
+----------------+-------+-------+-------+--------+------------
+ 1.0.0-rc1      |     1 |     0 |     0 | rc1    | t
+(1 row)
+
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"current_timescaledb_version": "1.0.0-rc1"}', 1, 0, 0, 'beta');
+ version_string | major | minor | patch | modtag | up_to_date 
+----------------+-------+-------+-------+--------+------------
+ 1.0.0-rc1      |     1 |     0 |     0 | rc1    | f
+(1 row)
+
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"current_timescaledb_version": "1.0.0-alpha"}', 1, 0, 0, 'beta');
+ version_string | major | minor | patch | modtag | up_to_date 
+----------------+-------+-------+-------+--------+------------
+ 1.0.0-alpha    |     1 |     0 |     0 | alpha  | t
+(1 row)
+
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"current_timescaledb_version": "1.0.0-alpha1"}', 1, 0, 0, 'alpha2');
+ version_string | major | minor | patch | modtag | up_to_date 
+----------------+-------+-------+-------+--------+------------
+ 1.0.0-alpha1   |     1 |     0 |     0 | alpha1 | t
+(1 row)
+
+\set ON_ERROR_STOP 0
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"current_timescaledb_version": " 10 "}', 10, 1, 0);
+ERROR:  parsing failed for version string " 10 "
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"current_timescaledb_version": "a"}', 9, 1, 1);
+ERROR:  parsing failed for version string "a"
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"current_timescaledb_version": "a.b.c"}', 9, 1, 1);
+ERROR:  parsing failed for version string "a.b.c"
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"current_timescaledb_version": "10.1.1a"}', 9, 1, 1);
+ERROR:  parsing failed for version string "10.1.1a"
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"current_timescaledb_version": "10.1.1+rc1"}', 10, 1, 1, 'rc1');
+ERROR:  parsing failed for version string "10.1.1+rc1"
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"current_timescaledb_version": "10.1.1.1"}', 10, 1, 1, 'rc1');
+ERROR:  parsing failed for version string "10.1.1.1"
+SELECT * FROM _timescaledb_internal.test_telemetry_parse_version('{"current_timescaledb_version": "1.0.0-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"}', 1, 0, 0, 'alpha2');
+ERROR:  parsing failed for version string "1.0.0-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+\set ON_ERROR_STOP 1
+SET timescaledb.telemetry_level=basic;
+SELECT _timescaledb_internal.test_telemetry_main_conn('timescale.com', 'path', 'http');
+WARNING:  could not make a connection to http://timescale.com
+WARNING:  telemetry connect error: could not make connection
+ test_telemetry_main_conn 
+--------------------------
+ f
+(1 row)
+
+SELECT _timescaledb_internal.test_telemetry_main_conn('timescale.com', 'path', 'https');
+WARNING:  could not make a connection to https://timescale.com
+WARNING:  telemetry connect error: could not make connection
+ test_telemetry_main_conn 
+--------------------------
+ f
+(1 row)
+
+SELECT _timescaledb_internal.test_telemetry_main_conn('telemetry.timescale.com', 'path', 'http');
+WARNING:  could not make a connection to http://telemetry.timescale.com
+WARNING:  telemetry connect error: could not make connection
+ test_telemetry_main_conn 
+--------------------------
+ f
+(1 row)
+
+SET timescaledb.telemetry_level=off;
